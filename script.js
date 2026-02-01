@@ -1,4 +1,5 @@
 const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPM_9oyH0PEX4xw8FbgN2zfh1V0STLzToet8YGQc90ZH-29L8tDgYIiDADmjEaNQh0rY1g-9v8SM1E/pub?gid=0&single=true&output=csv';
+const sheetFallbackUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPM_9oyH0PEX4xw8FbgN2zfh1V0STLzToet8YGQc90ZH-29L8tDgYIiDADmjEaNQh0rY1g-9v8SM1E/pub?output=csv';
 let newsBuffer = [];
 
 function parseCsvLine(line) {
@@ -60,11 +61,19 @@ async function loadNews() {
     try {
         const response = await fetch(sheetUrl, { cache: 'no-store' });
         if (!response.ok) {
-            throw new Error('Netzwerkfehler');
+            throw new Error(`Netzwerkfehler (${response.status})`);
         }
 
-        const csvData = await response.text();
-        const lines = csvData.split(/\r?\n/).slice(1);
+        let csvData = await response.text();
+        if (!csvData || csvData.trim().length === 0) {
+            const fallbackResponse = await fetch(sheetFallbackUrl, { cache: 'no-store' });
+            if (!fallbackResponse.ok) {
+                throw new Error(`Fallback-Fehler (${fallbackResponse.status})`);
+            }
+            csvData = await fallbackResponse.text();
+        }
+
+        const lines = csvData.split(/\r?\n/).slice(1).filter(line => line.trim() !== '');
 
         newsBuffer = lines
             .map(line => buildNewsItem(parseCsvLine(line)))
@@ -79,8 +88,11 @@ async function loadNews() {
             renderNews(grid, list);
         });
     } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unbekannter Fehler';
         grids.forEach(grid => {
-            grid.innerHTML = '<p>Fehler beim Laden der News aus der Tabelle. Prüfe, ob das Google-Sheet veröffentlicht ist und der Link stimmt.</p>';
+            grid.innerHTML = `
+                <p>Fehler beim Laden der News. Hinweis: Zscaler/Firewall kann Google Sheets blocken.</p>
+                <p>Details: ${message}</p>`;
         });
     }
 }
